@@ -1014,11 +1014,16 @@ runs:
         cd KernelSU
 
         KSU_COMMIT_SHA=$(git rev-parse HEAD)
-        KSU_COMMITS=$(git rev-list --count main 2>/dev/null || git rev-list --count HEAD)
-        KSU_VERSION=$((40000 + KSU_COMMITS - 2815))
-        if [ "$KSU_VERSION" -le 0 ]; then
-          echo "::error::Invalid SukiSU version calculation"
-          exit 1
+        # Match the official SukiSU Ultra v4.1.3 manager version. Kbuild
+        # otherwise derives this from the moving GitHub main branch.
+        KSU_VERSION=40796
+        if [ -f kernel/Kbuild ]; then
+          sed -i -E 's/^KSU_VERSION[[:space:]]*:=[[:space:]]*.*/KSU_VERSION := 40796/' kernel/Kbuild
+          sed -i -E 's/^VERSION_TAG[[:space:]]*:=[[:space:]]*.*/VERSION_TAG := 4.1.3/' kernel/Kbuild
+          grep -q '^KSU_VERSION := 40796$' kernel/Kbuild || {
+            echo "::error::Failed to pin SukiSU kernel version to 40796"
+            exit 1
+          }
         fi
 
         # A stale manager appid can be reused by an unrelated app after a
