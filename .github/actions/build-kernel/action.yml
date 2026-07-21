@@ -1021,6 +1021,27 @@ runs:
           exit 1
         fi
 
+        # A stale manager appid can be reused by an unrelated app after a
+        # KernelSU-Next to SukiSU migration. Re-detect SukiSU's signed manager
+        # once /data is ready instead of retaining that stale identity.
+        python3 - runtime/ksud.c <<'PY'
+        from pathlib import Path
+        import sys
+
+        source = Path(sys.argv[1])
+        text = source.read_text()
+        needle = "    ksu_load_allow_list();\n    ksu_observer_init();\n"
+        replacement = (
+            "    ksu_load_allow_list();\n"
+            "    ksu_invalidate_manager_uid();\n"
+            "    track_throne(false);\n"
+            "    ksu_observer_init();\n"
+        )
+        if needle not in text:
+            raise SystemExit("expected SukiSU post-fs-data manager hook not found")
+        source.write_text(text.replace(needle, replacement, 1), newline="\n")
+        PY
+
         cd ..
         echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> $GITHUB_ENV
         echo "NEED_HOOKS=false" >> $GITHUB_ENV
