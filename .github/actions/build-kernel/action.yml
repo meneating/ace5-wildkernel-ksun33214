@@ -1050,7 +1050,16 @@ runs:
             text = source.read_text()
             if needle not in text:
                 continue
-            source.write_text(text.replace(needle, replacement, 1), newline="\n")
+            text = text.replace(needle, replacement, 1)
+            include_line = '#include "manager/manager_identity.h"\n'
+            if 'manager/manager_identity.h' not in text:
+                # Prefer placing next to other manager includes.
+                marker = '#include "manager/throne_tracker.h"\n'
+                if marker in text:
+                    text = text.replace(marker, marker + include_line, 1)
+                else:
+                    text = include_line + text
+            source.write_text(text, newline="\n")
             print(f"patched manager re-register hook in {source}")
             patched = True
             break
