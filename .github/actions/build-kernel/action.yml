@@ -1024,7 +1024,7 @@ runs:
         # A stale manager appid can be reused by an unrelated app after a
         # KernelSU-Next to SukiSU migration. Re-detect SukiSU's signed manager
         # once /data is ready instead of retaining that stale identity.
-        python3 - runtime/ksud.c <<'PY'
+        python3 - kernel/runtime/ksud.c <<'PY'
         from pathlib import Path
         import sys
 
