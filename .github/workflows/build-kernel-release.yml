@@ -115,7 +115,7 @@ jobs:
           
           input="${{ github.event.inputs.op_model }}"
           ksu_options_raw='${{ github.event.inputs.ksu_options }}'
-          if ! ksu_options_normalized=$(echo "$ksu_options_raw" | jq -c 'map(if .type then .type |= ascii_upcase | if .hash == null then if .type == "KSUN" then .hash = "dev" elif .type == "KSU" then .hash = "main" else .hash end else . end else error("No type found") end)' 2>&1); then
+          if ! ksu_options_normalized=$(echo "$ksu_options_raw" | jq -c 'map(if .type then .type |= ascii_upcase | if .hash == null then if .type == "KSUN" then .hash = "dev" elif .type == "KSU" then .hash = "main" elif .type == "SUKI" then .hash = "builtin" else .hash end else . end else error("No type found") end)' 2>&1); then
             echo "::error::ksu_options validation failed: $ksu_options_normalized"
             exit 1
           fi
@@ -193,15 +193,10 @@ jobs:
           fi
           
           echo "$filtered" | jq '.' > matrix.json
-          echo "$ksu_options_normalized" > ksu_temp.json
           
           # For each device + each ksu option → one combined entry
-          merged_matrix=$(jq -n \
-            --slurpfile devices matrix.json \
-            --slurpfile ksu_list ksu_temp.json \
-            '[ $devices[0][] as $dev | $ksu_list[0][] as $ksu | ($dev + {ksu_type: $ksu.type, ksu_hash: $ksu.hash}) ]')
+          merged_matrix=$(jq -n --argjson devices "$filtered" --argjson ksu_list "$ksu_options_normalized" '[ $devices[] as $dev | $ksu_list[] as $ksu | ($dev + {ksu_type: $ksu.type, ksu_hash: $ksu.hash}) ]')
           
-          rm ksu_temp.json
           final_count=$(echo "$merged_matrix" | jq 'length')
           
           echo "✅ Found $final_count device(s) to build"
@@ -217,6 +212,9 @@ jobs:
           if [ "$ksu_type" == "KSUN" ]; then
             KSU_REPO_OWNER="KernelSU-Next"
             KSU_REPO_NAME="KernelSU-Next"
+          elif [ "$ksu_type" == "SUKI" ]; then
+            KSU_REPO_OWNER="SukiSU-Ultra"
+            KSU_REPO_NAME="SukiSU-Ultra"
           else
             KSU_REPO_OWNER="tiann"
             KSU_REPO_NAME="KernelSU"
@@ -415,15 +413,9 @@ jobs:
               "android16-6.12": $a16
             }')
           
-          echo "$susfs_hashes_json" > susfs_lookup_temp.json
           merged_matrix=$(echo "$merged_matrix" | jq \
-            --slurpfile hashes_array susfs_lookup_temp.json \
-            '
-              ($hashes_array[0]) as $hashes |
-              [.[] | . + {susfs_resolved_hash: ($hashes["\(.android_version)-\(.kernel_version)"] // "unknown")}]
-            ')
-          
-          rm susfs_lookup_temp.json
+            --argjson hashes "$susfs_hashes_json" \
+            '[.[] | . + {susfs_resolved_hash: ($hashes["\(.android_version)-\(.kernel_version)"] // "unknown")}]')
           
           merged_matrix=$(echo "$merged_matrix" | jq '
             sort_by(
@@ -431,13 +423,11 @@ jobs:
               .model
             )
           ')
-
-          echo "$merged_matrix" > final_matrix_temp.json
           
           # Recalculate wrapped with updated matrix and write output
-          wrapped=$(jq --slurp '{ include: .[] }' final_matrix_temp.json)
-          echo "matrix=$(echo "$wrapped" | jq -c .)" >> "$GITHUB_OUTPUT"
-          rm final_matrix_temp.json
+          wrapped=$(jq -n --argjson items "$merged_matrix" '{ include: $items }')
+          echo "matrix=$(jq -c . <<< "$wrapped")" >> "$GITHUB_OUTPUT"
+          
           echo "::endgroup::"
 
       - name: Upload build matrix
@@ -643,17 +633,20 @@ jobs:
           echo "[DEBUG] Ccache version : $(ccache --version | head -1)"
           echo "::endgroup::"
 
-      - name: ♻️ Configure ccache (bounded)
+      - name: ♻️ Configure ccache & LTO cache (bounded)
         run: |
           echo "::group::Configure ccache environment"
           set -euo pipefail
           if command -v ccache >/dev/null 2>&1; then
             CACHE_DIR="${{ github.workspace }}/.ccache"
+            LDCACHE_DIR="${{ github.workspace }}/.ld_cache"
             CCACHE_LOG="${{ github.workspace }}/ccache.log"
             mkdir -p "$CACHE_DIR"
+            mkdir -p "$LDCACHE_DIR"
             
             SETTINGS=(
               "CCACHE_DIR=$CACHE_DIR"
+              "LDCACHE_DIR=$LDCACHE_DIR"
               "CCACHE_MAXSIZE=12G"
               "CCACHE_COMPILERCHECK=content"
               "CCACHE_BASEDIR=${GITHUB_WORKSPACE}"
@@ -666,7 +659,6 @@ jobs:
               "CCACHE_INODE_CACHE=true"
               "CCACHE_IS_KERNEL_COMPILING=true"
               "CCACHE_UMASK=002"
-              "CCACHE_LOGFILE=${CCACHE_LOG}"
               "CCACHE_SLOPPINESS=file_macro,time_macros,include_file_mtime,include_file_ctime,pch_defines,system_headers,locale"
             )
             
@@ -674,6 +666,11 @@ jobs:
               export "$setting"
               echo "$setting" >> "$GITHUB_ENV"
             done
+            
+            if [ "${{ inputs.debug }}" == "true" ]; then
+              export "CCACHE_LOGFILE=$CCACHE_LOG"
+              echo "CCACHE_LOGFILE=$CCACHE_LOG" >> "$GITHUB_ENV"
+            fi
             
             if ccache --help 2>&1 | grep -q 'depend_mode'; then
               export CCACHE_DEPEND=true
