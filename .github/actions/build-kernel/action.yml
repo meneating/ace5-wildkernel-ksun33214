@@ -1014,17 +1014,29 @@ runs:
         cd KernelSU
 
         KSU_COMMIT_SHA=$(git rev-parse HEAD)
-        # Match the official SukiSU Ultra v4.1.3 manager version. Kbuild
-        # otherwise derives this from the moving GitHub main branch.
+        # Match the official SukiSU Ultra v4.1.3 manager version. Older
+        # SukiSU commits define the version in Makefile; newer ones use Kbuild.
         KSU_VERSION=40796
-        if [ -f kernel/Kbuild ]; then
-          sed -i -E 's/^KSU_VERSION[[:space:]]*:=[[:space:]]*.*/KSU_VERSION := 40796/' kernel/Kbuild
-          sed -i -E 's/^VERSION_TAG[[:space:]]*:=[[:space:]]*.*/VERSION_TAG := 4.1.3/' kernel/Kbuild
-          grep -q '^KSU_VERSION := 40796$' kernel/Kbuild || {
-            echo "::error::Failed to pin SukiSU kernel version to 40796"
-            exit 1
-          }
+        KSU_VERSION_FILE=""
+        for candidate in kernel/Kbuild kernel/Makefile; do
+          if [ -f "$candidate" ] && grep -q '^KSU_VERSION[[:space:]]*:=' "$candidate"; then
+            KSU_VERSION_FILE="$candidate"
+            break
+          fi
+        done
+        if [ -z "$KSU_VERSION_FILE" ]; then
+          echo "::error::Unable to find the SukiSU kernel version definition"
+          exit 1
         fi
+        sed -i -E 's/^KSU_VERSION[[:space:]]*:=[[:space:]]*.*/KSU_VERSION := 40796/' "$KSU_VERSION_FILE"
+        if grep -q '^VERSION_TAG[[:space:]]*:=' "$KSU_VERSION_FILE"; then
+          sed -i -E 's/^VERSION_TAG[[:space:]]*:=[[:space:]]*.*/VERSION_TAG := 4.1.3/' "$KSU_VERSION_FILE"
+        fi
+        grep -q '^KSU_VERSION := 40796$' "$KSU_VERSION_FILE" || {
+          echo "::error::Failed to pin SukiSU kernel version to 40796 in $KSU_VERSION_FILE"
+          exit 1
+        }
+        echo "Pinned SukiSU kernel version in $KSU_VERSION_FILE"
 
         # A stale manager appid can be reused by an unrelated app after a
         # KernelSU-Next to SukiSU migration. Re-detect SukiSU's signed manager
