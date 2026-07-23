@@ -1201,58 +1201,8 @@ runs:
               echo "Patching KSU_TOOLKIT Support for SusFS kernel!"
               patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/ksu_toolkit.patch"
             elif [ "${{ inputs.ksu_type }}" = "SUKI" ]; then
-              # SukiSU v4.1.3 uses the KernelSU-compatible SUSFS integration
-              # point.  Without this patch CONFIG_KSU_SUSFS is absent and the
-              # sidex15 module cannot find the kernel interface at runtime.
               cd "$KSU_FOLDER"
-              # v4.1.3 already carries part of this integration, so duplicate
-              # hunks are expected. Keep the successfully applied SUSFS hunks
-              # and continue, matching the previously validated 40837 build.
-              patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
-              if ! grep -q '^config KSU_SUSFS$' kernel/Kconfig; then
-                python3 <<'PY'
-        from pathlib import Path
-
-        path = Path("kernel/Kconfig")
-        text = path.read_text()
-        marker = "\nendmenu\n"
-        if marker not in text:
-            raise SystemExit("SukiSU Kconfig endmenu marker not found")
-
-        symbols = [
-            ("KSU_SUSFS", "KernelSU addon - SUSFS", "KSU"),
-            ("KSU_SUSFS_HAS_MAGIC_MOUNT", "SUSFS magic mount support", "KSU_SUSFS"),
-            ("KSU_SUSFS_SUS_PATH", "SUSFS suspicious path hiding", "KSU_SUSFS"),
-            ("KSU_SUSFS_SUS_MOUNT", "SUSFS suspicious mount hiding", "KSU_SUSFS"),
-            ("KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT", "SUSFS automatic KSU mount hiding", "KSU_SUSFS"),
-            ("KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT", "SUSFS automatic bind mount hiding", "KSU_SUSFS"),
-            ("KSU_SUSFS_SUS_KSTAT", "SUSFS suspicious kstat spoofing", "KSU_SUSFS"),
-            ("KSU_SUSFS_SUS_OVERLAYFS", "SUSFS overlayfs hiding", "KSU_SUSFS"),
-            ("KSU_SUSFS_TRY_UMOUNT", "SUSFS try umount", "KSU_SUSFS"),
-            ("KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT", "SUSFS automatic bind-mount umount", "KSU_SUSFS"),
-            ("KSU_SUSFS_SPOOF_UNAME", "SUSFS uname spoofing", "KSU_SUSFS"),
-            ("KSU_SUSFS_ENABLE_LOG", "SUSFS kernel logging", "KSU_SUSFS"),
-            ("KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS", "Hide KSU and SUSFS symbols", "KSU_SUSFS"),
-            ("KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG", "SUSFS cmdline and bootconfig spoofing", "KSU_SUSFS"),
-            ("KSU_SUSFS_OPEN_REDIRECT", "SUSFS open redirect", "KSU_SUSFS"),
-            ("KSU_SUSFS_SUS_MAP", "SUSFS memory map hiding", "KSU_SUSFS"),
-            ("KSU_SUSFS_SUS_SU", "SUSFS sus su mode", "KSU_SUSFS"),
-        ]
-        lines = ["", 'menu "KernelSU - SUSFS"']
-        for symbol, prompt, dependency in symbols:
-            lines.extend([
-                f"config {symbol}",
-                f'\tbool "{prompt}"',
-                f"\tdepends on {dependency}",
-                "\tdefault y",
-                "",
-            ])
-        lines.append("endmenu")
-        block = "\n".join(lines) + "\n"
-        text = text.replace(marker, block + marker, 1)
-        path.write_text(text, newline="\n")
-        PY
-              fi
+              echo "SukiSU commit already contains the SUSFS v2.2.0 integration; skipping generic SUSFS core patch."
             else
               cd "$KSU_FOLDER"
               patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
